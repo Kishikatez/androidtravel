@@ -1,3 +1,8 @@
 <resources>
-    <style name="Theme.TripExpenseManager" parent="android:style/Theme.Material.Light.NoActionBar" />
+    <style name="Theme.TripExpenseManager" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#F7F8F4</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_fing_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.TripExpenseManager.App</item>
+    </style>
+    <style name="Theme.TripExpenseManager.App" parent="android:style/Theme.Material.Light.NoActionBar" />
 </resources>

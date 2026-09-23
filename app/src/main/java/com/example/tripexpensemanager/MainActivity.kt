@@ -1,13 +1,19 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package com.example.tripexpensemanager
 
 import android.os.Bundle
 import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -50,7 +57,7 @@ import retrofit2.http.*
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 private val ComponentActivity.userStore by preferencesDataStore("user_session")
-private const val API_BASE_URL = "http://10.112.254.131:8000/"
+private const val API_BASE_URL = "https://devoted-perfection-production-e006.up.railway.app/"
 
 @Serializable data class User(val userId: String, val name: String, val phone: String)
 @Serializable data class UserCreate(val name: String, val phone: String)
@@ -60,6 +67,7 @@ private const val API_BASE_URL = "http://10.112.254.131:8000/"
 @Serializable data class TripJoin(val tripId: String, val userId: String)
 @Serializable data class Expense(val expenseId: String = "", val name: String, val amount: Double, val description: String = "", val paidByName: String, val timestamp: String = "", val clientExpenseId: String? = null)
 @Serializable data class ExpenseCreate(val name: String, val amount: Double, val description: String, val paidByUserId: String, val paidByName: String, val timestamp: String? = null, val clientExpenseId: String? = null)
+@Serializable data class ExpenseUpdate(val name: String, val amount: Double, val description: String = "")
 @Serializable data class Member(val userId: String, val name: String, val isAdmin: Boolean)
 
 interface TripApi {
@@ -70,6 +78,8 @@ interface TripApi {
     @GET("trips/{id}") suspend fun getTrip(@Path("id") id: String): TripSummary
     @GET("trips/{id}/expenses") suspend fun getExpenses(@Path("id") id: String): List<Expense>
     @POST("trips/{id}/expenses") suspend fun addExpense(@Path("id") id: String, @Body expense: ExpenseCreate): Expense
+    @PUT("trips/{tripId}/expenses/{expenseId}") suspend fun updateExpense(@Path("tripId") tripId: String, @Path("expenseId") expenseId: String, @Query("user_id") userId: String, @Body expense: ExpenseUpdate): Expense
+    @DELETE("trips/{tripId}/expenses/{expenseId}") suspend fun deleteExpense(@Path("tripId") tripId: String, @Path("expenseId") expenseId: String, @Query("user_id") userId: String)
     @GET("trips/{id}/members") suspend fun getMembers(@Path("id") id: String): List<Member>
     @DELETE("trips/{tripId}/members/{userId}") suspend fun leaveTrip(@Path("tripId") tripId: String, @Path("userId") userId: String)
 }
@@ -136,6 +146,29 @@ class MainViewModel(
             syncData(); onDone()
         }
     }
+    fun updateExpense(expense: Expense, name: String, amount: String, description: String, onDone: () -> Unit) = viewModelScope.launch {
+        request {
+            val value = amount.toDouble()
+            if (expense.expenseId.startsWith("local-")) {
+                val clientId = expense.clientExpenseId
+                val pending = loadPending().map { queued -> if (queued.clientExpenseId == clientId) queued.copy(name = name.trim(), amount = value, description = description.trim()) else queued }
+                expenses = expenses.map { current -> if (current.expenseId == expense.expenseId) current.copy(name = name.trim(), amount = value, description = description.trim()) else current }
+                savePending(pending)
+            } else {
+                val updated = api.updateExpense(trip!!.tripId, expense.expenseId, user!!.userId, ExpenseUpdate(name.trim(), value, description.trim()))
+                expenses = expenses.map { current -> if (current.expenseId == updated.expenseId) updated else current }
+            }
+            saveExpenses(expenses); onDone()
+        }
+    }
+    fun deleteExpense(expense: Expense, onDone: () -> Unit) = viewModelScope.launch {
+        request {
+            if (!expense.expenseId.startsWith("local-")) api.deleteExpense(trip!!.tripId, expense.expenseId, user!!.userId)
+            savePending(loadPending().filter { it.clientExpenseId != expense.clientExpenseId })
+            expenses = expenses.filter { it.expenseId != expense.expenseId }
+            saveExpenses(expenses); onDone()
+        }
+    }
     fun leaveTrip(onDone: () -> Unit) = viewModelScope.launch { request { api.leaveTrip(trip!!.tripId, user!!.userId); trip = null; expenses = emptyList(); saveTrip(null); clearTripSession(); onDone() } }
 }
 
@@ -156,11 +189,17 @@ class MainViewModelFactory(private val activity: ComponentActivity) : ViewModelP
 private enum class Screen { HOME, CREATE, JOIN, DASHBOARD, EXPENSE }
 
 class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); setContent { val model: MainViewModel = viewModel(factory = MainViewModelFactory(this)); TripApp(model) } }
+    override fun onCreate(savedInstanceState: Bundle?) { installSplashScreen(); super.onCreate(savedInstanceState); setContent { val model: MainViewModel = viewModel(factory = MainViewModelFactory(this)); TripApp(model) } }
 }
 
 @Composable fun TripApp(model: MainViewModel) {
     val nav = rememberNavController()
+    var showBrandSplash by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) { delay(1400); showBrandSplash = false }
+    if (showBrandSplash) {
+        BrandSplash()
+        return
+    }
     MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF176B5B), secondary = Color(0xFFE7794D), background = Color(0xFFF7F8F4))) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             if (!model.initialized) return@Surface
@@ -178,6 +217,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable private fun BrandSplash() {
+    Column(Modifier.fillMaxSize().background(Color(0xFFF7F8F4)), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Image(painterResource(com.example.tripexpensemanager.R.drawable.ic_fing_logo), contentDescription = null, modifier = Modifier.size(82.dp))
+        Spacer(Modifier.height(18.dp))
+        Text("Fing", fontSize = 42.sp, fontWeight = FontWeight.Bold, color = Color(0xFF176B5B))
+        Text("by kishikatez", fontSize = 14.sp, color = Color(0xFF6B756F))
+    }
+}
+
 @Composable private fun SetupScreen(model: MainViewModel, done: () -> Unit) { var name by remember { mutableStateOf("") }; var phone by remember { mutableStateOf("") }; FormPage("Welcome to Trip Expense Manager", "Set up your local profile to start sharing expenses.") { Input("Your name", name) { name = it }; Input("Phone number", phone, KeyboardType.Phone) { phone = it }; PrimaryButton("Continue", name.isNotBlank() && phone.isNotBlank()) { model.register(name, phone, done) }; ErrorText(model.error) } }
 
 @Composable private fun HomeScreen(model: MainViewModel, create: () -> Unit, join: () -> Unit) { FormPage("Ready for the trip?", "Create a shared budget or join one with a code.") { Text("Hi, ${model.user?.name}", fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(20.dp)); PrimaryButton("Create trip", true, create); OutlinedButton(onClick = join, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)) { Text("Join with a trip ID") }; ErrorText(model.error) } }
@@ -186,11 +234,42 @@ class MainActivity : ComponentActivity() {
 @Composable private fun JoinTripScreen(model: MainViewModel, done: () -> Unit) { var code by remember { mutableStateOf("") }; Input("Trip ID / join code", code) { code = it }; PrimaryButton("Join trip", code.isNotBlank()) { model.joinTrip(code, done) }; ErrorText(model.error) }
 @Composable private fun AddExpenseScreen(model: MainViewModel, done: () -> Unit) { var name by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }; var description by remember { mutableStateOf("") }; Input("Expense name", name) { name = it }; Input("Amount (₹)", amount, KeyboardType.Decimal) { amount = it }; Input("Description (optional)", description) { description = it }; PrimaryButton("Add expense", name.isNotBlank() && amount.toDoubleOrNull() != null) { model.addExpense(name, amount, description, done) }; ErrorText(model.error) }
 
-@Composable private fun DashboardScreen(model: MainViewModel, add: () -> Unit, members: () -> Unit) { val trip = model.trip; var editingPeopleCount by remember { mutableStateOf(false) }; var peopleCount by remember(trip?.peopleCount) { mutableStateOf(trip?.peopleCount?.toString() ?: "1") }; LaunchedEffect(Unit) { model.refreshData() }; if (editingPeopleCount) { AlertDialog(onDismissRequest = { editingPeopleCount = false }, title = { Text("Trip people") }, text = { Input("Total people on the trip", peopleCount, KeyboardType.Number) { peopleCount = it } }, confirmButton = { TextButton(onClick = { if (peopleCount.toIntOrNull() ?: 0 > 0) { model.updatePeopleCount(peopleCount); editingPeopleCount = false } }) { Text("Save") } }, dismissButton = { TextButton(onClick = { editingPeopleCount = false }) { Text("Cancel") } }) }; Scaffold(floatingActionButton = { FloatingActionButton(onClick = add, containerColor = MaterialTheme.colorScheme.secondary) { Icon(Icons.Default.Add, "Add expense") } }) { padding -> LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { item { Spacer(Modifier.height(20.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text(trip?.tripName ?: "Trip", fontSize = 28.sp, fontWeight = FontWeight.Bold); Text(trip?.tripId ?: "", color = Color.Gray) }; Row { IconButton({ model.refreshData() }) { Icon(Icons.Default.Refresh, "Refresh") }; IconButton(members) { Icon(Icons.Default.Person, "Members") } } }; Spacer(Modifier.height(8.dp)); Summary(trip); if (trip?.createdBy == model.user?.userId) { TextButton(onClick = { editingPeopleCount = true }) { Text("Change total people") } } }; item { Text("Recent expenses", fontSize = 20.sp, fontWeight = FontWeight.Bold) }; if (model.expenses.isEmpty()) item { Text("No expenses yet. Add the first one.", color = Color.Gray) } else items(model.expenses) { expense -> ExpenseRow(expense) }; item { Spacer(Modifier.height(80.dp)) } } } }
+@Composable private fun DashboardScreen(model: MainViewModel, add: () -> Unit, members: () -> Unit) { val trip = model.trip; var editingPeopleCount by remember { mutableStateOf(false) }; var peopleCount by remember(trip?.peopleCount) { mutableStateOf(trip?.peopleCount?.toString() ?: "1") }; LaunchedEffect(Unit) { model.refreshData() }; if (editingPeopleCount) { AlertDialog(onDismissRequest = { editingPeopleCount = false }, title = { Text("Trip people") }, text = { Input("Total people on the trip", peopleCount, KeyboardType.Number) { peopleCount = it } }, confirmButton = { TextButton(onClick = { if (peopleCount.toIntOrNull() ?: 0 > 0) { model.updatePeopleCount(peopleCount); editingPeopleCount = false } }) { Text("Save") } }, dismissButton = { TextButton(onClick = { editingPeopleCount = false }) { Text("Cancel") } }) }; Scaffold(floatingActionButton = { FloatingActionButton(onClick = add, containerColor = MaterialTheme.colorScheme.secondary) { Icon(Icons.Default.Add, "Add expense") } }) { padding -> LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { item { Spacer(Modifier.height(20.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text(trip?.tripName ?: "Trip", fontSize = 28.sp, fontWeight = FontWeight.Bold); Text(trip?.tripId ?: "", color = Color.Gray) }; Row { IconButton({ model.refreshData() }) { Icon(Icons.Default.Refresh, "Refresh") }; IconButton(members) { Icon(Icons.Default.Person, "Members") } } }; Spacer(Modifier.height(8.dp)); Summary(trip); if (trip?.createdBy == model.user?.userId) { TextButton(onClick = { editingPeopleCount = true }) { Text("Change total people") } } }; item { Text("Recent expenses", fontSize = 20.sp, fontWeight = FontWeight.Bold) }; if (model.expenses.isEmpty()) item { Text("No expenses yet. Add the first one.", color = Color.Gray) } else items(model.expenses, key = { it.expenseId }) { expense -> ExpenseRow(expense, onEdit = { name, amount, description -> model.updateExpense(expense, name, amount, description) {} }, onDelete = { model.deleteExpense(expense) {} }) }; item { Spacer(Modifier.height(80.dp)) } } } }
 
 @Composable private fun Summary(trip: TripSummary?) { Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F0E8)), shape = RoundedCornerShape(20.dp)) { Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween) { Metric("Budget", trip?.totalBudget); Metric("Spent", trip?.totalSpent); Metric("Left", trip?.remaining) }; Text("${trip?.peopleCount ?: 0} people planned · ${trip?.memberCount ?: 0} using app", Modifier.padding(start = 18.dp, bottom = 16.dp), color = Color(0xFF176B5B), fontWeight = FontWeight.Bold) } }
 @Composable private fun Metric(label: String, value: Double?) { Column { Text(label, color = Color.Gray, fontSize = 13.sp); Text("₹${String.format("%.0f", value ?: 0.0)}", fontWeight = FontWeight.Bold, fontSize = 18.sp) } }
-@Composable private fun ExpenseRow(expense: Expense) { ListItem(headlineContent = { Text(expense.name, fontWeight = FontWeight.Bold) }, supportingContent = { Text("${expense.paidByName}${if (expense.description.isNotBlank()) " · ${expense.description}" else ""}") }, trailingContent = { Text("₹${String.format("%.0f", expense.amount)}", fontWeight = FontWeight.Bold) }) }
+@Composable private fun ExpenseRow(expense: Expense, onEdit: (String, String, String) -> Unit, onDelete: () -> Unit) {
+    var actions by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    var name by remember(expense) { mutableStateOf(expense.name) }
+    var amount by remember(expense) { mutableStateOf(expense.amount.toString()) }
+    var description by remember(expense) { mutableStateOf(expense.description) }
+    if (actions) AlertDialog(
+        onDismissRequest = { actions = false },
+        title = { Text(expense.name) },
+        text = { Text("Edit or delete this expense for everyone in the trip.") },
+        confirmButton = { TextButton(onClick = { actions = false; editing = true }) { Text("Edit") } },
+        dismissButton = { TextButton(onClick = { actions = false; deleting = true }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete") } }
+    )
+    if (editing) AlertDialog(onDismissRequest = { editing = false }, title = { Text("Edit expense") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Input("Expense name", name) { name = it }; Input("Amount", amount, KeyboardType.Decimal) { amount = it }; Input("Description", description) { description = it } } }, confirmButton = { TextButton(enabled = name.isNotBlank() && amount.toDoubleOrNull() != null, onClick = { onEdit(name, amount, description); editing = false }) { Text("Save") } }, dismissButton = { TextButton(onClick = { editing = false }) { Text("Cancel") } })
+    if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("Delete expense?") }, text = { Text("This removes the expense for everyone in the trip.") }, confirmButton = { TextButton(onClick = { onDelete(); deleting = false }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } })
+    ListItem(
+        modifier = Modifier.combinedClickable(onClick = {}, onLongClick = { actions = true }),
+        headlineContent = { Text(expense.name, fontWeight = FontWeight.Bold) },
+        supportingContent = { Text(listOfNotNull(expense.paidByName, expense.description.takeIf { it.isNotBlank() }, formatTimestamp(expense.timestamp).takeIf { it.isNotBlank() }).joinToString(" · ")) },
+        trailingContent = { Text("₹${String.format("%.0f", expense.amount)}", fontWeight = FontWeight.Bold, fontSize = 20.sp) }
+    )
+}
+
+private fun formatTimestamp(value: String): String {
+    if (value.isBlank()) return ""
+    return try {
+        DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(value))
+    } catch (_: Exception) {
+        value
+    }
+}
 @Composable private fun MembersScreen(model: MainViewModel, nav: NavHostController) { Scaffold(topBar = { TopAppBar(title = { Text("Trip members") }, navigationIcon = { IconButton({ nav.popBackStack() }) { Icon(Icons.Default.ArrowBack, "Back") } }) }) { padding -> LazyColumn(Modifier.padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { items(model.members) { member -> ListItem(headlineContent = { Text(member.name) }, supportingContent = { Text(if (member.isAdmin) "Trip admin" else "Member") }) } } } }
 
 @Composable private fun FormScaffold(title: String, nav: NavHostController, content: @Composable () -> Unit) { Scaffold(topBar = { TopAppBar(title = { Text(title) }, navigationIcon = { IconButton({ nav.popBackStack() }) { Icon(Icons.Default.ArrowBack, "Back") } }) }) { padding -> Column(Modifier.padding(padding).padding(20.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) { content() } } }

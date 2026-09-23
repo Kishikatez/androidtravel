@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:theme="@style/Theme.TripExpenseManager" android:label="Trip Expense Manager" android:usesCleartextTraffic="true">
+    <application android:theme="@style/Theme.TripExpenseManager" android:label="@string/app_name" android:icon="@drawable/ic_fing_logo">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -30,7 +30,7 @@ _Functions, classes, and exports with call relationships._
 | `get_members` | function | `def get_members(trip_id)` | — |
 | `leave_trip` | function | `def leave_trip(trip_id, user_id)` | — |
 
-_+3 more symbols_
+_+4 more symbols_
 
 ### `backend/app/models.py`
 
@@ -42,6 +42,7 @@ _+3 more symbols_
 | `TripSettingsUpdate` | class | `class TripSettingsUpdate(BaseModel)` | `app/main.py` |
 | `TripJoin` | class | `class TripJoin(BaseModel)` | `app/main.py` |
 | `ExpenseCreate` | class | `class ExpenseCreate(BaseModel)` | `app/main.py` |
+| `ExpenseUpdate` | class | `class ExpenseUpdate(BaseModel)` | `app/main.py` |
 
 ---
 
@@ -61,8 +62,8 @@ _Naming patterns and styles. Follow these for consistency._
 
 - `get_*` → `get_database` (4 occurrences)
 - `create_*` → `create_user` (2 occurrences)
+- `update_*` → `update_trip_settings` (2 occurrences)
 - `delete_*` → `delete_expense` (1 occurrences)
-- `update_*` → `update_trip_settings` (1 occurrences)
 
 
-_Generated: 2026-09-23T09:41:36.918Z_
+_Generated: 2026-09-23T11:39:06.644Z_

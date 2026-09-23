@@ -35,3 +35,8 @@ class ExpenseCreate(BaseModel):
     paidByName: str = Field(min_length=1, max_length=80)
     timestamp: datetime | None = None
     clientExpenseId: str | None = Field(default=None, max_length=100)
+
+class ExpenseUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    amount: float = Field(gt=0)
+    description: str = Field(default="", max_length=500)

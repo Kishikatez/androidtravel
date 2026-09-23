@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import get_database, utc_now
-from .models import ExpenseCreate, TripCreate, TripJoin, TripSettingsUpdate, UserCreate, UserResponse
+from .models import ExpenseCreate, ExpenseUpdate, TripCreate, TripJoin, TripSettingsUpdate, UserCreate, UserResponse
 
 app = FastAPI(title="Trip Expense Manager API")
 origins = [item.strip() for item in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
@@ -167,10 +167,33 @@ def add_expense(trip_id: str, payload: ExpenseCreate):
     document["expenseId"] = str(result.inserted_id)
     return document
 
+@app.put("/trips/{trip_id}/expenses/{expense_id}")
+def update_expense(trip_id: str, expense_id: str, payload: ExpenseUpdate, user_id: str):
+    db = database()
+    trip = db.trips.find_one({"tripId": trip_id.upper()})
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    if ObjectId(user_id) not in trip.get("members", []):
+        raise HTTPException(status_code=403, detail="Only trip members can edit expenses")
+    expense = db.expenses.find_one({"_id": ObjectId(expense_id), "tripId": trip_id.upper()})
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    expense.update({"name": payload.name.strip(), "amount": payload.amount, "description": payload.description.strip()})
+    db.expenses.update_one({"_id": expense["_id"]}, {"$set": {"name": expense["name"], "amount": expense["amount"], "description": expense["description"]}})
+    return {"expenseId": str(expense["_id"]), "name": expense["name"], "amount": expense["amount"],
+            "description": expense["description"], "paidByName": expense["paidByName"],
+            "timestamp": expense["timestamp"], "clientExpenseId": expense.get("clientExpenseId")}
+
 
 @app.delete("/trips/{trip_id}/expenses/{expense_id}")
-def delete_expense(trip_id: str, expense_id: str):
-    result = database().expenses.delete_one({"_id": ObjectId(expense_id), "tripId": trip_id.upper()})
+def delete_expense(trip_id: str, expense_id: str, user_id: str):
+    db = database()
+    trip = db.trips.find_one({"tripId": trip_id.upper()})
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    if ObjectId(user_id) not in trip.get("members", []):
+        raise HTTPException(status_code=403, detail="Only trip members can delete expenses")
+    result = db.expenses.delete_one({"_id": ObjectId(expense_id), "tripId": trip_id.upper()})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Expense not found")
     return {"deleted": True}
