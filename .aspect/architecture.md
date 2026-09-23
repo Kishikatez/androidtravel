@@ -12,7 +12,7 @@ _Where code execution begins. Categorized by type with detection confidence._
 
 _Server handlers, API routes, application entry._
 
-- 🟢 `backend/app/main.py`: FastAPI (9 routes)
+- 🟢 `backend/app/main.py`: FastAPI (11 routes)
 
 ## Directory Layout
 
@@ -25,4 +25,4 @@ _Server handlers, API routes, application entry._
 **Test files:** 1 | **Dirs:** backend/tests
 
 
-_Generated: 2026-09-23T05:19:09.461Z_
+_Generated: 2026-09-23T09:41:36.670Z_

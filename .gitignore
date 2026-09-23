@@ -8,3 +8,7 @@ backend/.env
 __pycache__/
 .pytest_cache/
 *.iml
+app/build/
+
+# Aspect Code (local AI context)
+.aspect/

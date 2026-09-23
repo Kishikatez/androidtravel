@@ -16,8 +16,11 @@ class UserResponse(BaseModel):
 class TripCreate(BaseModel):
     tripName: str = Field(min_length=1, max_length=100)
     budgetPerPerson: float = Field(gt=0)
+    peopleCount: int = Field(default=1, ge=1, le=1000)
     userId: str = Field(min_length=1)
 
+class TripSettingsUpdate(BaseModel):
+    peopleCount: int = Field(ge=1, le=1000)
 
 class TripJoin(BaseModel):
     tripId: str = Field(min_length=1, max_length=20)
@@ -31,3 +34,4 @@ class ExpenseCreate(BaseModel):
     paidByUserId: str = Field(min_length=1)
     paidByName: str = Field(min_length=1, max_length=80)
     timestamp: datetime | None = None
+    clientExpenseId: str | None = Field(default=None, max_length=100)

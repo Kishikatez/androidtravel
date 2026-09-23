@@ -26,4 +26,4 @@ _Most central modules by connectivity. Changes here propagate widely._
 → Check External Integrations.
 
 
-_Generated: 2026-09-23T05:19:09.467Z_
+_Generated: 2026-09-23T09:41:36.910Z_
